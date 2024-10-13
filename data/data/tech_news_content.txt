@@ -1,0 +1,167 @@
+How to Train a YOLOv11 Object Detection Model on a Custom Dataset
+How to Train a YOLOv11 Object Detection Model on a Custom Dataset
+James Gallagher
+Published Oct 8, 2024 • 6 min read
+Launched on September 27, 2024, YOLOv11 (referred to by the model author Ultralytics as YOLO11) is a computer vision model that you can use for a wide variety of tasks, from object detection to segmentation to classification.
+
+According to Ultralytics, “YOLO11m achieves a higher mean Average Precision (mAP) score on the COCO dataset while using 22% fewer parameters than YOLOv8m.” With fewer parameters, the model can run faster, thereby making the model more attractive for use in real-time computer vision applications.
+
+
+In this guide, we are going to walk through how to train a YOLOv11 object detection model with a custom dataset. We will:
+
+Create a custom dataset with labeled images
+Export the dataset for use in model training
+Train the model using the a Colab training notebook
+Run inference with the model
+Here is an example of predictions from a model trained to identify shipping containers:
+
+
+We have a YOLOv11 Colab notebook for you to use as you follow this tutorial.
+
+Without further ado, let’s get started!
+
+Step #1: Create a Roboflow Project
+To get started, we need to prepare a labeled dataset in the format required by YOLOv11. We can do so with Roboflow.
+
+Create a free Roboflow account. Once you have created an account, click “Create New Project” on the Roboflow dashboard. You will be taken to a page where you can configure your project.
+
+Set a name for your project. Choose the “Object Detection” dataset type:
+
+
+Then, click “Create Project” to create your project.
+
+Step #2: Upload and Annotate Images
+Next, you need to upload data for use in your project. You can upload labeled data to review or convert to the YOLO PyTorch TXT format, and/or raw images to annotate in your project.
+
+In this guide, we will train a model that detects shipping containers. We have an open shipping container dataset on Roboflow Universe that you can use. Or, you can use your own data.
+
+Drag and drop your raw or annotated images into the Upload box:
+
+
+When you drag in data, the data will be processed in your browser. Click “Save and Continue” to upload your data into the Roboflow platform.
+
+
+With your data in Roboflow, you can annotate images.
+
+To annotate an image, click “Annotate” in the left sidebar. Click on an image to start annotating. You will be taken to the Roboflow Annotate interface in which you can label your data:
+
+
+To draw bounding boxes, choose the bounding box labeling tool in the right sidebar.
+
+With that said, we recommend using the Roboflow Smart Polygon tool to speed up the labeling process. Smart Polygon lets you use the SAM-2 foundation model to label objects with a single click. Smart Polygons are automatically converted to an object detection format when your data is exported.
+
+To enable Label Assist, click on the magic wand icon in the right sidebar in the annotation interface. Choose the Enhanced labeling option.
+
+You can then point and click on any region that you want to include in an annotation:
+
+
+To expand a label, click outside the region that the tool has selected. To refine a polygon, click inside the annotated region.
+
+When you have labeled an object, click “Finish” to save the annotation. You will then be asked to choose a class for the annotation, after which point you can label the next object in the image.
+
+Step #3: Generate a Dataset Version
+Once you have labeled your dataset, you are ready to generate a dataset version. A dataset version is a snapshot of a dataset, frozen in time. You can apply preprocessing and augmentation datasets to versions, allowing you to experiment with preprocessing and augmentation without changing the underlying dataset.
+
+To generate a dataset version, click “Generate” in the left sidebar.
+
+Then, you can select the preprocessing and augmentation steps that you want to apply.
+
+
+For the first version of your project, we recommend leaving the preprocessing steps as their default, and applying no augmentations. This will allow you to create a baseline against which you can compare model versions.
+
+Once you have configured your dataset version, click “Generate” at the bottom of the page. Your dataset version will be generated.
+
+Step #4: Export Data
+With a dataset version ready, you can export it for use in training a YOLO11 model.
+
+Click “Download Dataset”:
+
+
+Then choose the YOLOv11 PyTorch TXT format:
+
+
+Choose the “Show download code option”.
+
+A code snippet will appear that you can use to export your dataset.
+
+Step #5: Train a YOLOv11 Model
+With the export code snippet ready, you can start training a YOLOv11 model. We have prepared a notebook that you can use to train a model.
+
+To get started, open the Roboflow YOLOv11 model training notebook in Google Colab. Below, we will walk through the main steps.
+
+First, we need to install a few dependencies:
+
+Ultralytics, which we will use for training and inference;
+supervision, which we will use to post-process model predictions, and;
+Roboflow, which we will use to download our dataset.
+%pip install ultralytics supervision roboflow
+import ultralytics
+ultralytics.checks()
+Then, update the dataset download section to use the dataset export code snippet:
+
+!mkdir {HOME}/datasets
+%cd {HOME}/datasets
+
+from google.colab import userdata
+from roboflow import Roboflow
+
+ROBOFLOW_API_KEY = userdata.get('ROBOFLOW_API_KEY')
+rf = Roboflow(api_key=ROBOFLOW_API_KEY)
+
+workspace = rf.workspace("your-workspace")
+project = workspace.project("your-dataset")
+version = project.version(VERSION)
+dataset = version.download("yolov8")
+Next, we need to make a few changes to the dataset files to work with the YOLOv11 training routine:
+
+!sed -i '$d' {dataset.location}/data.yaml   # Delete the last line
+!sed -i '$d' {dataset.location}/data.yaml   # Delete the second-to-last line
+!sed -i '$d' {dataset.location}/data.yaml   # Delete the third-to-last line
+
+!echo 'test: ../test/images' >> {dataset.location}/data.yaml
+!echo 'train: ../train/images' >> {dataset.location}/data.yaml
+!echo 'val: ../valid/images' >> {dataset.location}/data.yaml
+We can then train our model using the following command:
+
+%cd {HOME}
+
+!yolo task=detect mode=train model=yolo11s.pt data={dataset.location}/data.yaml epochs=10 imgsz=640 plots=True
+Here, we train a YOLO11s model. If you want to train a model of a different size, replace yolo11s with the ID of the base model weights to use.
+
+We will train for 10 epochs to test the training. For a model you want to use in production you may want to train for 50-100 epochs.
+
+
+You can view the confusion matrix for your model using the following code:
+
+from IPython.display import Image as IPyImage
+
+IPyImage(filename=f'{HOME}/runs/detect/train/confusion_matrix.png', width=600)
+Here is the confusion matrix for our model:
+
+
+You can then run inference with the Ultralytics yolo command line interface:
+
+!yolo task=detect mode=predict model={HOME}/runs/detect/train/weights/best.pt conf=0.25 source={dataset.location}/test/images save=True
+This will run inference on images in our test/images test set in our dataset. This command will return all predictions with a confidence greater than 0.25 (25%).
+
+We can then visualize the model results using the following code:
+
+import glob
+import os
+from IPython.display import Image as IPyImage, display
+
+latest_folder = max(glob.glob('/content/runs/detect/predict*/'), key=os.path.getmtime)
+for img in glob.glob(f'{latest_folder}/*.jpg')[:3]:
+	display(IPyImage(filename=img, width=600))
+	print("\n")
+Here is an example of a result from our model:
+
+
+We have successfully trained a model using our shipping container dataset.
+
+Conclusion
+YOLOv11 is a computer vision model developed by Ultralytics, the creators of YOLOv5 and YOLOv8. You can train models for object detection, segmentation, classification, and other tasks with YOLOv11.
+
+In this guide, we walked through how to train a YOLOv11 model. We prepared a dataset in Roboflow, then exported the dataset in the YOLOv11 PyTorch TXT format for use in training a model. We trained our model in a Google Colab environment using the YOLO11n weights, then evaluated it on images from our model test set.
+
+To explore more training notebooks from Roboflow, check out Roboflow Notebooks, our open source repository of computer vision notebooks.
